@@ -18,6 +18,12 @@ async function seedAdmin(): Promise<void> {
   const phone = requiredEnvironment('ADMIN_PHONE');
   const firstName = process.env.ADMIN_FIRST_NAME?.trim() || 'System';
   const lastName = process.env.ADMIN_LAST_NAME?.trim() || 'Administrator';
+  const openingBalanceMinor = BigInt(
+    process.env.ADMIN_INITIAL_BALANCE_MINOR || '0',
+  );
+  if (openingBalanceMinor < 0n) {
+    throw new Error('ADMIN_INITIAL_BALANCE_MINOR cannot be negative');
+  }
 
   await dataSource.initialize();
   await dataSource.transaction(async (manager) => {
@@ -56,7 +62,7 @@ async function seedAdmin(): Promise<void> {
         wallets.create({
           userId: admin.id,
           currency: 'NGN',
-          balanceMinor: 0n,
+          balanceMinor: openingBalanceMinor,
         }),
       );
     }
