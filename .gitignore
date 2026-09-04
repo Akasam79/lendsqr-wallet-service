@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Compiled output and test reports
+dist/
+coverage/
+
+# Local environment files. Keep .env.example committed.
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Logs and temporary files
+*.log
+*.tsbuildinfo
+.cache/
+
