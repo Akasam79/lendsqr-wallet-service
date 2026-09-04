@@ -138,6 +138,71 @@ describe('Wallet service (e2e)', () => {
     expect(count).toBe(1);
   });
 
+  it('rejects an idempotency key reused for different transfer details', async () => {
+    const sender = await registerAccount(
+      'key-sender@example.com',
+      '+2348010000007',
+    );
+    const recipient = await registerAccount(
+      'key-recipient@example.com',
+      '+2348010000008',
+    );
+    await setBalance(sender.wallet.id, 10_000n);
+    const token = await login('key-sender@example.com');
+    const idempotencyKey = 'reused-key-001';
+
+    await request(app.getHttpServer())
+      .post('/api/v1/transfers')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ recipientWalletId: recipient.wallet.id, amount: '1.00' })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/transfers')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ recipientWalletId: recipient.wallet.id, amount: '2.00' })
+      .expect(409);
+
+    expect(response.body).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    await expectBalances(sender.wallet.id, recipient.wallet.id, 9_900n, 100n);
+  });
+
+  it('prevents transfers to a blocked recipient without moving money', async () => {
+    const admin = await registerAccount('admin@example.com', '+2348010000009');
+    const sender = await registerAccount(
+      'active-sender@example.com',
+      '+2348010000010',
+    );
+    const recipient = await registerAccount(
+      'blocked-recipient@example.com',
+      '+2348010000011',
+    );
+    await database.query("UPDATE users SET role = 'ADMIN' WHERE id = $1", [
+      admin.user.id,
+    ]);
+    await setBalance(sender.wallet.id, 10_000n);
+
+    const adminToken = await login('admin@example.com');
+    await request(app.getHttpServer())
+      .patch(`/api/v1/admin/users/${recipient.user.id}/status`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'BLOCKED', reason: 'Risk review' })
+      .expect(200);
+
+    const senderToken = await login('active-sender@example.com');
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/transfers')
+      .set('Authorization', `Bearer ${senderToken}`)
+      .set('Idempotency-Key', 'blocked-recipient-001')
+      .send({ recipientWalletId: recipient.wallet.id, amount: '1.00' })
+      .expect(422);
+
+    expect(response.body).toMatchObject({ code: 'ACCOUNT_BLOCKED' });
+    await expectBalances(sender.wallet.id, recipient.wallet.id, 10_000n, 0n);
+  });
+
   afterAll(async () => {
     await app.close();
   });
