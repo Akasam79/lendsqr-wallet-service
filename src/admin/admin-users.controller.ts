@@ -12,18 +12,23 @@ import { User } from '../users/user.entity';
 import { UserRole } from '../users/user.enums';
 import { AdminUsersService } from './admin-users.service';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Administration')
+@ApiBearerAuth()
 @Roles(UserRole.ADMIN)
 @Controller('admin/users')
 export class AdminUsersController {
   constructor(private readonly adminUsersService: AdminUsersService) {}
 
   @Get(':id')
+  @ApiOperation({ summary: 'Inspect a user account' })
   async getUser(@Param('id', ParseUUIDPipe) id: string) {
     return this.present(await this.adminUsersService.findById(id));
   }
 
   @Patch(':id/status')
+  @ApiOperation({ summary: 'Block or unblock a user account' })
   async updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() actor: User,

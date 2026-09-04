@@ -5,6 +5,9 @@ const environmentSchema = Joi.object({
     .valid('development', 'test', 'production')
     .default('development'),
   PORT: Joi.number().port().default(3000),
+  CORS_ORIGINS: Joi.string().default('*'),
+  RATE_LIMIT_TTL_MS: Joi.number().integer().positive().default(60000),
+  RATE_LIMIT_MAX_REQUESTS: Joi.number().integer().positive().default(100),
   DATABASE_URL: Joi.string()
     .uri({ scheme: ['postgres', 'postgresql'] })
     .required(),
@@ -20,6 +23,9 @@ const environmentSchema = Joi.object({
 export type Environment = {
   NODE_ENV: 'development' | 'test' | 'production';
   PORT: number;
+  CORS_ORIGINS: string;
+  RATE_LIMIT_TTL_MS: number;
+  RATE_LIMIT_MAX_REQUESTS: number;
   DATABASE_URL: string;
   DB_SSL: boolean;
   JWT_SECRET: string;
