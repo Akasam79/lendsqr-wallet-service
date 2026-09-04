@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './config/database.config';
 import { validateEnvironment } from './config/environment.validation';
 import { HealthModule } from './health/health.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { HealthModule } from './health/health.module';
     }),
     TypeOrmModule.forRootAsync(databaseConfig),
     HealthModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

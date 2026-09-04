@@ -10,7 +10,7 @@ const environmentSchema = Joi.object({
     .required(),
   DB_SSL: Joi.boolean().truthy('true').falsy('false').default(false),
   JWT_SECRET: Joi.string().min(32).required(),
-  JWT_EXPIRES_IN: Joi.string().default('15m'),
+  JWT_EXPIRES_IN_SECONDS: Joi.number().integer().positive().default(900),
   BLACKLIST_PROVIDER: Joi.string().valid('test', 'adjutor').default('test'),
   BLACKLIST_TEST_IDENTITIES: Joi.string().allow('').default(''),
   ADJUTOR_BASE_URL: Joi.string().uri().default('https://adjutor.lendsqr.com'),
@@ -23,7 +23,7 @@ export type Environment = {
   DATABASE_URL: string;
   DB_SSL: boolean;
   JWT_SECRET: string;
-  JWT_EXPIRES_IN: string;
+  JWT_EXPIRES_IN_SECONDS: number;
   BLACKLIST_PROVIDER: 'test' | 'adjutor';
   BLACKLIST_TEST_IDENTITIES: string;
   ADJUTOR_BASE_URL: string;
