@@ -5,6 +5,7 @@ import { databaseConfig } from './config/database.config';
 import { validateEnvironment } from './config/environment.validation';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { AuthModule } from './auth/auth.module';
     TypeOrmModule.forRootAsync(databaseConfig),
     HealthModule,
     AuthModule,
+    AdminModule,
   ],
 })
 export class AppModule {}

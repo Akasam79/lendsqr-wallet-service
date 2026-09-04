@@ -35,6 +35,20 @@ export class User {
   @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
   status: UserStatus;
 
+  @Column({ name: 'blocked_at', type: 'timestamptz', nullable: true })
+  blockedAt: Date | null;
+
+  @Column({
+    name: 'blocked_reason',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
+  blockedReason: string | null;
+
+  @Column({ name: 'blocked_by_id', type: 'uuid', nullable: true })
+  blockedById: string | null;
+
   @Column({ name: 'blacklist_checked_at', type: 'timestamptz' })
   blacklistCheckedAt: Date;
 
