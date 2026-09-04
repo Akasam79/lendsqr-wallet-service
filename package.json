@@ -19,13 +19,14 @@
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main.js",
+    "start:render": "node dist/database/run-migrations.js && node dist/database/seed-admin.js && pnpm start:prod",
     "lint": "oxlint src/ test/ scripts/",
     "seed:admin": "ts-node -r tsconfig-paths/register scripts/seed-admin.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "node --env-file=.env.test ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json"
+    "test:e2e": "node --env-file-if-exists=.env.test ./node_modules/jest/bin/jest.js --config ./test/jest-e2e.json"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
