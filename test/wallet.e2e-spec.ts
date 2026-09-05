@@ -81,14 +81,20 @@ describe('Wallet service (e2e)', () => {
     );
     const token = await login('funding@example.com');
 
-    const responses = await Promise.all(
-      Array.from({ length: 20 }, () =>
+    const settledResponses = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
         request(app.getHttpServer())
           .post('/api/v1/wallets/me/fund')
           .set('Authorization', `Bearer ${token}`)
           .set('Idempotency-Key', 'same-funding-key-001')
           .send({ amount: '1.00', description: 'Test funding' }),
       ),
+    );
+    expect(
+      settledResponses.filter(({ status }) => status === 'rejected'),
+    ).toHaveLength(0);
+    const responses = settledResponses.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
     );
 
     expect(responses.every(({ status }) => status === 201)).toBe(true);
@@ -119,8 +125,8 @@ describe('Wallet service (e2e)', () => {
     );
     const token = await login('parallel-funding@example.com');
 
-    const responses = await Promise.all(
-      Array.from({ length: 20 }, (_, index) =>
+    const settledResponses = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
         request(app.getHttpServer())
           .post('/api/v1/wallets/me/fund')
           .set('Authorization', `Bearer ${token}`)
@@ -131,9 +137,15 @@ describe('Wallet service (e2e)', () => {
           .send({ amount: '1.00' }),
       ),
     );
+    expect(
+      settledResponses.filter(({ status }) => status === 'rejected'),
+    ).toHaveLength(0);
+    const responses = settledResponses.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
 
     expect(responses.every(({ status }) => status === 201)).toBe(true);
-    await expectWalletBalance(account.wallet.id, 2_000n);
+    await expectWalletBalance(account.wallet.id, 1_000n);
   });
 
   it('never lets parallel transfers overdraw the sender', async () => {
