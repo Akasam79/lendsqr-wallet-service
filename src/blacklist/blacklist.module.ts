@@ -3,24 +3,22 @@ import { ConfigService } from '@nestjs/config';
 import { BLACKLIST_PROVIDER } from './blacklist-provider';
 import { BlacklistService } from './blacklist.service';
 import { TestBlacklistProvider } from './test-blacklist.provider';
+import { AdjutorBlacklistProvider } from './adjutor-blacklist.provider';
 
 @Module({
   providers: [
     TestBlacklistProvider,
+    AdjutorBlacklistProvider,
     {
       provide: BLACKLIST_PROVIDER,
-      inject: [ConfigService, TestBlacklistProvider],
+      inject: [ConfigService, TestBlacklistProvider, AdjutorBlacklistProvider],
       useFactory: (
         config: ConfigService,
         testProvider: TestBlacklistProvider,
+        adjutorProvider: AdjutorBlacklistProvider,
       ) => {
         const provider = config.get<string>('BLACKLIST_PROVIDER', 'test');
-        if (provider !== 'test') {
-          throw new Error(
-            `Blacklist provider "${provider}" is not enabled until its contract is confirmed`,
-          );
-        }
-        return testProvider;
+        return provider === 'adjutor' ? adjutorProvider : testProvider;
       },
     },
     BlacklistService,

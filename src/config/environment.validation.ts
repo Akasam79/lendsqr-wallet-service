@@ -18,6 +18,7 @@ const environmentSchema = Joi.object({
   BLACKLIST_TEST_IDENTITIES: Joi.string().allow('').default(''),
   ADJUTOR_BASE_URL: Joi.string().uri().default('https://adjutor.lendsqr.com'),
   ADJUTOR_API_KEY: Joi.string().allow('').optional(),
+  ADJUTOR_TIMEOUT_MS: Joi.number().integer().positive().default(5000),
 }).unknown(true);
 
 export type Environment = {
@@ -34,6 +35,7 @@ export type Environment = {
   BLACKLIST_TEST_IDENTITIES: string;
   ADJUTOR_BASE_URL: string;
   ADJUTOR_API_KEY?: string;
+  ADJUTOR_TIMEOUT_MS: number;
 };
 
 export function validateEnvironment(
