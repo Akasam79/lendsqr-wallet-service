@@ -239,8 +239,8 @@ The concurrency suite proves that:
 
 - Simultaneous funding retries create one funding record and one credit.
 - Distinct parallel funding requests all contribute exactly once to the balance.
-- Twenty simultaneous NGN 10 transfers from a NGN 100 wallet result in exactly ten successes and a zero sender balance.
-- Twenty simultaneous submissions with one idempotency key create one transfer and one debit.
+- Ten simultaneous NGN 10 transfers from a NGN 50 wallet result in exactly five successes and a zero sender balance.
+- Ten simultaneous submissions with one idempotency key create one transfer and one debit.
 - A key cannot be reused for altered transfer details.
 - A blocked recipient causes a failed transfer without changing either balance.
 

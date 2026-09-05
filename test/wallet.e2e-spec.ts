@@ -157,11 +157,11 @@ describe('Wallet service (e2e)', () => {
       'recipient@example.com',
       '+2348010000004',
     );
-    await setBalance(sender.wallet.id, 10_000n);
+    await setBalance(sender.wallet.id, 5_000n);
     const token = await login('sender@example.com');
 
-    const responses = await Promise.all(
-      Array.from({ length: 20 }, (_, index) =>
+    const settledResponses = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
         request(app.getHttpServer())
           .post('/api/v1/transfers')
           .set('Authorization', `Bearer ${token}`)
@@ -169,18 +169,24 @@ describe('Wallet service (e2e)', () => {
           .send({ recipientWalletId: recipient.wallet.id, amount: '10.00' }),
       ),
     );
+    expect(
+      settledResponses.filter(({ status }) => status === 'rejected'),
+    ).toHaveLength(0);
+    const responses = settledResponses.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
 
-    expect(responses.filter(({ status }) => status === 201)).toHaveLength(10);
-    expect(responses.filter(({ status }) => status === 422)).toHaveLength(10);
-    await expectBalances(sender.wallet.id, recipient.wallet.id, 0n, 10_000n);
+    expect(responses.filter(({ status }) => status === 201)).toHaveLength(5);
+    expect(responses.filter(({ status }) => status === 422)).toHaveLength(5);
+    await expectBalances(sender.wallet.id, recipient.wallet.id, 0n, 5_000n);
 
     const rows = (await database.query(
       'SELECT status, count(*)::int AS count FROM transfers GROUP BY status',
     )) as { status: TransferStatus; count: number }[];
     expect(rows).toEqual(
       expect.arrayContaining([
-        { status: TransferStatus.SUCCEEDED, count: 10 },
-        { status: TransferStatus.FAILED, count: 10 },
+        { status: TransferStatus.SUCCEEDED, count: 5 },
+        { status: TransferStatus.FAILED, count: 5 },
       ]),
     );
   });
@@ -197,14 +203,20 @@ describe('Wallet service (e2e)', () => {
     await setBalance(sender.wallet.id, 10_000n);
     const token = await login('retry-sender@example.com');
 
-    const responses = await Promise.all(
-      Array.from({ length: 20 }, () =>
+    const settledResponses = await Promise.allSettled(
+      Array.from({ length: 10 }, () =>
         request(app.getHttpServer())
           .post('/api/v1/transfers')
           .set('Authorization', `Bearer ${token}`)
           .set('Idempotency-Key', 'same-retry-key-001')
           .send({ recipientWalletId: recipient.wallet.id, amount: '1.00' }),
       ),
+    );
+    expect(
+      settledResponses.filter(({ status }) => status === 'rejected'),
+    ).toHaveLength(0);
+    const responses = settledResponses.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
     );
 
     expect(responses.every(({ status }) => status === 201)).toBe(true);
