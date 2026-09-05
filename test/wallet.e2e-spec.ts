@@ -33,9 +33,14 @@ describe('Wallet service (e2e)', () => {
   });
 
   beforeEach(async () => {
-    await database.query(
-      'TRUNCATE TABLE wallet_fundings, transfers, wallets, users RESTART IDENTITY CASCADE',
-    );
+    // DELETE takes row-level locks. TRUNCATE needs an exclusive table lock and
+    // can deadlock with requests that are finishing on slower CI runners.
+    await database.transaction(async (manager) => {
+      await manager.query('DELETE FROM wallet_fundings');
+      await manager.query('DELETE FROM transfers');
+      await manager.query('DELETE FROM wallets');
+      await manager.query('DELETE FROM users');
+    });
   });
 
   it('reports that the application process is alive', () => {
