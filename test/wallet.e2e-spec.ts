@@ -34,7 +34,7 @@ describe('Wallet service (e2e)', () => {
 
   beforeEach(async () => {
     await database.query(
-      'TRUNCATE TABLE transfers, wallets, users RESTART IDENTITY CASCADE',
+      'TRUNCATE TABLE wallet_fundings, transfers, wallets, users RESTART IDENTITY CASCADE',
     );
   });
 
@@ -67,6 +67,68 @@ describe('Wallet service (e2e)', () => {
       'SELECT count(*)::int AS count FROM users',
     )) as [{ count: number }];
     expect(count).toBe(1);
+  });
+
+  it('applies simultaneous funding retries only once', async () => {
+    const account = await registerAccount(
+      'funding@example.com',
+      '+2348010000012',
+    );
+    const token = await login('funding@example.com');
+
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        request(app.getHttpServer())
+          .post('/api/v1/wallets/me/fund')
+          .set('Authorization', `Bearer ${token}`)
+          .set('Idempotency-Key', 'same-funding-key-001')
+          .send({ amount: '1.00', description: 'Test funding' }),
+      ),
+    );
+
+    expect(responses.every(({ status }) => status === 201)).toBe(true);
+    expect(new Set(responses.map(({ body }) => body.reference)).size).toBe(1);
+    await expectWalletBalance(account.wallet.id, 100n);
+
+    const [{ count }] = (await database.query(
+      'SELECT count(*)::int AS count FROM wallet_fundings',
+    )) as [{ count: number }];
+    expect(count).toBe(1);
+
+    const changedRequest = await request(app.getHttpServer())
+      .post('/api/v1/wallets/me/fund')
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', 'same-funding-key-001')
+      .send({ amount: '2.00', description: 'Test funding' })
+      .expect(409);
+    expect(changedRequest.body).toMatchObject({
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
+    await expectWalletBalance(account.wallet.id, 100n);
+  });
+
+  it('keeps all concurrent funding credits accurate', async () => {
+    const account = await registerAccount(
+      'parallel-funding@example.com',
+      '+2348010000013',
+    );
+    const token = await login('parallel-funding@example.com');
+
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        request(app.getHttpServer())
+          .post('/api/v1/wallets/me/fund')
+          .set('Authorization', `Bearer ${token}`)
+          .set(
+            'Idempotency-Key',
+            `funding-key-${index.toString().padStart(3, '0')}`,
+          )
+          .send({ amount: '1.00' }),
+      ),
+    );
+
+    expect(responses.every(({ status }) => status === 201)).toBe(true);
+    await expectWalletBalance(account.wallet.id, 2_000n);
   });
 
   it('never lets parallel transfers overdraw the sender', async () => {
@@ -254,5 +316,16 @@ describe('Wallet service (e2e)', () => {
     );
     expect(balances.get(senderWalletId)).toBe(expectedSender);
     expect(balances.get(recipientWalletId)).toBe(expectedRecipient);
+  }
+
+  async function expectWalletBalance(
+    walletId: string,
+    expectedBalance: bigint,
+  ) {
+    const [row] = (await database.query(
+      'SELECT balance_minor FROM wallets WHERE id = $1',
+      [walletId],
+    )) as [{ balance_minor: string }];
+    expect(BigInt(row.balance_minor)).toBe(expectedBalance);
   }
 });
