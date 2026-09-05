@@ -51,6 +51,14 @@ export class WalletsService {
       .digest('hex');
 
     const funding = await this.dataSource.transaction(async (manager) => {
+      // Serialize requests that carry the same wallet/key pair before taking
+      // row locks. This avoids speculative unique-index insert deadlocks while
+      // still allowing unrelated wallets and idempotency keys to proceed.
+      await manager.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`${wallet.id}:${idempotencyKey}`],
+      );
+
       // Funding and transfer operations lock users before wallets, ensuring an
       // account block cannot race with a balance change.
       const lockedUser = await manager
@@ -70,37 +78,30 @@ export class WalletsService {
         .setLock('pessimistic_write')
         .getOneOrFail();
       const fundings = manager.getRepository(WalletFunding);
-      const insertion = await manager
-        .createQueryBuilder()
-        .insert()
-        .into(WalletFunding)
-        .values({
-          reference: `FND_${randomBytes(12).toString('hex').toUpperCase()}`,
-          walletId: lockedWallet.id,
-          amountMinor,
-          currency: lockedWallet.currency,
-          idempotencyKey,
-          requestHash,
-          description,
-        })
-        .orIgnore()
-        .returning(['id'])
-        .execute();
-
-      const current = await fundings.findOneByOrFail({
+      const existing = await fundings.findOneBy({
         walletId: lockedWallet.id,
         idempotencyKey,
       });
-      if (!insertion.raw[0]?.id) {
-        if (current.requestHash !== requestHash) {
+      if (existing) {
+        if (existing.requestHash !== requestHash) {
           throw new ConflictException({
             code: 'IDEMPOTENCY_KEY_REUSED',
             message: 'This idempotency key was used for a different request',
           });
         }
-        return current;
+        return existing;
       }
 
+      const current = fundings.create({
+        reference: `FND_${randomBytes(12).toString('hex').toUpperCase()}`,
+        walletId: lockedWallet.id,
+        amountMinor,
+        currency: lockedWallet.currency,
+        idempotencyKey,
+        requestHash,
+        description,
+      });
+      await fundings.save(current);
       lockedWallet.balanceMinor += amountMinor;
       await manager.save(lockedWallet);
       return current;
