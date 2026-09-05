@@ -174,6 +174,19 @@ All paths below are prefixed with `/api/v1`. Except for registration, login and 
 | `GET` | `/health/live` | Public | Confirm the process is running |
 | `GET` | `/health/ready` | Public | Confirm PostgreSQL is reachable |
 
+### Test every endpoint with Postman
+
+Import [`postman/lendsqr-wallet-service.postman_collection.json`](./postman/lendsqr-wallet-service.postman_collection.json) into Postman. The collection uses the deployed API by default; change its `baseUrl` variable to `http://localhost:3000/api/v1` to test a local instance.
+
+1. Open the collection's **Variables** tab and set `adminEmail` and `adminPassword` to the administrator values configured in Render. Keep these as local values and never commit them.
+2. Run the requests from folders 1 through 6 in order, or use **Run collection**. Start with **Register Sender** for each new run; its pre-request script generates unique emails, phone numbers and idempotency keys.
+3. Registration and login scripts capture the user IDs, wallet IDs and JWTs automatically. Funding and transfer scripts capture their references for later requests.
+4. Review the **Test Results** panel. Each request explains its purpose and expected response, and includes assertions for the expected status and important response fields.
+
+The sequence checks both happy paths and security-sensitive behavior: blacklist rejection, missing authentication, idempotent funding and transfer replays, rejection of altered replays, balance accuracy, administrator authorization, and block/unblock enforcement. Render's free service may take roughly 50 seconds to wake after inactivity, so allow the first health request to finish before running the collection.
+
+Interactive OpenAPI documentation is also available at [`/docs`](https://lendsqr-wallet-service-vk80.onrender.com/docs), with the machine-readable document at [`/docs-json`](https://lendsqr-wallet-service-vk80.onrender.com/docs-json).
+
 ### Example flow
 
 Register a recipient:
@@ -245,6 +258,14 @@ The concurrency suite proves that:
 - A blocked recipient causes a failed transfer without changing either balance.
 
 GitHub Actions runs linting, unit tests, compilation and database-backed tests on pushes and pull requests.
+
+### Database state before submission
+
+Do **not** clear the hosted Render database before submitting. The synthetic smoke-test records contain no real customer data, demonstrate that the deployed write paths work, and do not affect another test run because the Postman collection generates unique identities and keys. Keeping the database also preserves the seeded administrator required to demonstrate account controls.
+
+The end-to-end suite uses the separate `lendsqr_wallet_test` database and deletes its own application rows before each test. It must never be pointed at the development or Render database.
+
+If a completely fresh **local development** database is ever needed, stop the API, drop and recreate only `lendsqr_wallet` in pgAdmin, then run `pnpm migration:run` and `pnpm seed:admin`. Confirm the database name before dropping it. This reset is optional and should not be performed against the hosted submission database.
 
 ## Deploy to Render
 

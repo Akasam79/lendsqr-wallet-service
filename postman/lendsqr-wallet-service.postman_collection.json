@@ -1,0 +1,316 @@
+{
+  "info": {
+    "_postman_id": "d6903ead-9dfc-4fe0-9c25-d29fd3dd22af",
+    "name": "Lendsqr Wallet Service",
+    "description": "A review-ready collection for the Lendsqr wallet service. It covers health checks, blacklist-aware account creation, JWT authentication, wallet funding, wallet-to-wallet transfers, replay protection, and administrator block/unblock controls.\n\nRun the requests from top to bottom. Register Sender initializes unique test identities and idempotency keys. Successful requests save JWTs, user IDs, wallet IDs, and transaction references as collection variables.\n\nBefore running the Administration folder, set adminEmail and adminPassword in the collection variables to the administrator credentials configured in Render. They are deliberately not committed.\n\nAmounts are decimal strings in naira at the API boundary and integer kobo internally. The deployed review environment treats blocked@example.com and +2348000000000 as blacklisted fixtures while the Adjutor account awaits KYC approval.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://lendsqr-wallet-service-vk80.onrender.com/api/v1", "type": "string" },
+    { "key": "testPassword", "value": "StrongPass123!", "type": "string" },
+    { "key": "adminEmail", "value": "", "type": "string" },
+    { "key": "adminPassword", "value": "", "type": "string" },
+    { "key": "senderEmail", "value": "", "type": "string" },
+    { "key": "senderPhone", "value": "", "type": "string" },
+    { "key": "senderUserId", "value": "", "type": "string" },
+    { "key": "senderWalletId", "value": "", "type": "string" },
+    { "key": "senderToken", "value": "", "type": "string" },
+    { "key": "recipientEmail", "value": "", "type": "string" },
+    { "key": "recipientPhone", "value": "", "type": "string" },
+    { "key": "recipientUserId", "value": "", "type": "string" },
+    { "key": "recipientWalletId", "value": "", "type": "string" },
+    { "key": "recipientToken", "value": "", "type": "string" },
+    { "key": "adminToken", "value": "", "type": "string" },
+    { "key": "fundingKey", "value": "", "type": "string" },
+    { "key": "fundingReference", "value": "", "type": "string" },
+    { "key": "transferKey", "value": "", "type": "string" },
+    { "key": "blockedTransferKey", "value": "", "type": "string" },
+    { "key": "transferReference", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Health",
+      "description": "Public operational checks used by people and hosting platforms.",
+      "item": [
+        {
+          "name": "Liveness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/live",
+            "description": "Confirms that the Node.js process is running. Expected 200 response: `{ \"status\": \"ok\", \"timestamp\": \"...\" }`. This does not query PostgreSQL."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Process is alive', () => pm.response.to.have.status(200));", "pm.test('Status is ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"] } }]
+        },
+        {
+          "name": "Readiness",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/ready",
+            "description": "Confirms that the application can query PostgreSQL. Expected 200 response: `{ \"status\": \"ready\", \"database\": \"reachable\", \"timestamp\": \"...\" }`. Render uses this endpoint as its health check."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Application is ready', () => pm.response.to.have.status(200));", "pm.test('Database is reachable', () => pm.expect(pm.response.json().database).to.eql('reachable'));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Authentication and account creation",
+      "description": "Creates two customers and their wallets, demonstrates blacklist rejection, and obtains JWTs. Start with Register Sender whenever you want a fresh test run.",
+      "item": [
+        {
+          "name": "Register Sender",
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["const stamp = Date.now().toString();", "pm.collectionVariables.set('senderEmail', `sender.${stamp}@example.com`);", "pm.collectionVariables.set('recipientEmail', `recipient.${stamp}@example.com`);", "pm.collectionVariables.set('senderPhone', `+23480${stamp.slice(-8)}`);", "pm.collectionVariables.set('recipientPhone', `+23481${stamp.slice(-8)}`);", "pm.collectionVariables.set('fundingKey', `funding-${stamp}`);", "pm.collectionVariables.set('transferKey', `transfer-${stamp}`);", "pm.collectionVariables.set('blockedTransferKey', `blocked-transfer-${stamp}`);"] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Account and wallet created', () => pm.response.to.have.status(201));", "const body = pm.response.json();", "pm.collectionVariables.set('senderUserId', body.user.id);", "pm.collectionVariables.set('senderWalletId', body.wallet.id);", "pm.test('Wallet starts at zero', () => pm.expect(body.wallet.balanceMinor).to.eql('0'));"] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Samuel\",\n  \"lastName\": \"Sender\",\n  \"email\": \"{{senderEmail}}\",\n  \"phone\": \"{{senderPhone}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Screens the email and phone through the configured blacklist provider, then atomically creates one user and one NGN wallet. Expected 201 response contains `user` and `wallet`; the initial `balanceMinor` is `0`. This request generates fresh collection variables before it runs."
+          }
+        },
+        {
+          "name": "Register Recipient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient and wallet created', () => pm.response.to.have.status(201));", "const body = pm.response.json();", "pm.collectionVariables.set('recipientUserId', body.user.id);", "pm.collectionVariables.set('recipientWalletId', body.wallet.id);"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Ada\",\n  \"lastName\": \"Recipient\",\n  \"email\": \"{{recipientEmail}}\",\n  \"phone\": \"{{recipientPhone}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Creates the recipient account and saves its user and wallet IDs for the transfer and administration examples. Expected status: 201."
+          }
+        },
+        {
+          "name": "Reject Blacklisted Identity",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Blacklisted identity is rejected', () => pm.response.to.have.status(403));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Blocked\",\n  \"lastName\": \"Fixture\",\n  \"email\": \"blocked@example.com\",\n  \"phone\": \"+2348099999999\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Demonstrates blacklist enforcement. The review deployment deliberately marks `blocked@example.com` as blacklisted. Expected 403 response: `{ \"message\": \"Registration is not permitted for this identity\", \"error\": \"Forbidden\", \"statusCode\": 403 }`. No user or wallet is created."
+          }
+        },
+        {
+          "name": "Login Sender",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Sender authenticated', () => pm.response.to.have.status(200));", "pm.collectionVariables.set('senderToken', pm.response.json().accessToken);"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{senderEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Verifies the Argon2 password hash and returns a short-lived JWT. Expected 200 response contains `accessToken`, `tokenType: Bearer`, and the public user fields. The token is saved as `senderToken`."
+          }
+        },
+        {
+          "name": "Login Recipient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient authenticated', () => pm.response.to.have.status(200));", "pm.collectionVariables.set('recipientToken', pm.response.json().accessToken);"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{recipientEmail}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Authenticates the recipient and saves its JWT as `recipientToken`. Expected status: 200."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Users and wallets",
+      "description": "Reads the authenticated identity and current wallet state.",
+      "item": [
+        {
+          "name": "Get Current Sender",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Current user returned', () => pm.response.to.have.status(200));", "pm.test('Correct sender returned', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('senderUserId')));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/users/me",
+            "description": "Returns the user identified by the JWT, including role, status, blacklist-check time, and creation time. Password hashes are never returned. Expected status: 200."
+          }
+        },
+        {
+          "name": "Get Sender Wallet Before Funding",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Wallet returned', () => pm.response.to.have.status(200));", "pm.test('Wallet belongs to sender', () => pm.expect(pm.response.json().id).to.eql(pm.collectionVariables.get('senderWalletId')));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/wallets/me",
+            "description": "Returns the sender's wallet ID, currency, balance in kobo, and timestamps. Immediately after registration, expected `balanceMinor` is `0`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Wallet funding",
+      "description": "Credits the sender and proves that retries cannot apply the credit twice.",
+      "item": [
+        {
+          "name": "Fund Sender Wallet",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Wallet funded', () => pm.response.to.have.status(201));", "pm.collectionVariables.set('fundingReference', pm.response.json().reference);", "pm.test('Amount is NGN 100', () => pm.expect(pm.response.json().amountMinor).to.eql('10000'));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/wallets/me/fund",
+            "description": "Credits NGN 100 using a mandatory idempotency key. Expected 201 response contains an `FND_...` reference, `amount: 100.00`, `amountMinor: 10000`, currency, description, and creation time. This direct funding endpoint is intentionally a demo boundary; production funding would normally consume a verified payment-provider webhook."
+          }
+        },
+        {
+          "name": "Replay Same Funding Safely",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Safe replay returns original result', () => pm.response.to.have.status(201));", "pm.test('Reference is unchanged', () => pm.expect(pm.response.json().reference).to.eql(pm.collectionVariables.get('fundingReference')));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/wallets/me/fund",
+            "description": "Sends the exact same request and key. Expected status: 201 with the original funding reference. The balance remains NGN 100 rather than NGN 200."
+          }
+        },
+        {
+          "name": "Reject Altered Funding Replay",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Altered replay is rejected', () => pm.response.to.have.status(409));", "pm.test('Error identifies key reuse', () => pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_KEY_REUSED'));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"101.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/wallets/me/fund",
+            "description": "Reuses the funding key with a different amount. Expected 409 response: `{ \"code\": \"IDEMPOTENCY_KEY_REUSED\", \"message\": \"This idempotency key was used for a different request\" }`. No money moves."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Transfers",
+      "description": "Moves money atomically between the two wallets and demonstrates replay protection.",
+      "item": [
+        {
+          "name": "Transfer NGN 40 to Recipient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Transfer succeeded', () => pm.response.to.have.status(201));", "const body = pm.response.json();", "pm.collectionVariables.set('transferReference', body.reference);", "pm.test('Transfer is completed', () => pm.expect(body.status).to.eql('SUCCEEDED'));", "pm.test('Amount is NGN 40', () => pm.expect(body.amountMinor).to.eql('4000'));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/transfers",
+            "description": "Transfers NGN 40 from the authenticated sender to the saved recipient wallet. Expected 201 response contains a `TRF_...` reference, both wallet IDs, `amountMinor: 4000`, currency, `status: SUCCEEDED`, description, and timestamps. Both user and wallet rows are locked in deterministic order inside one PostgreSQL transaction."
+          }
+        },
+        {
+          "name": "Replay Same Transfer Safely",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Safe replay returns original result', () => pm.response.to.have.status(201));", "pm.test('Reference is unchanged', () => pm.expect(pm.response.json().reference).to.eql(pm.collectionVariables.get('transferReference')));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/transfers",
+            "description": "Retries the exact transfer. Expected status: 201 with the original reference. The sender remains at NGN 60 and the recipient at NGN 40."
+          }
+        },
+        {
+          "name": "Reject Altered Transfer Replay",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Altered replay is rejected', () => pm.response.to.have.status(409));", "pm.test('Error identifies key reuse', () => pm.expect(pm.response.json().code).to.eql('IDEMPOTENCY_KEY_REUSED'));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"41.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/transfers",
+            "description": "Reuses the transfer key with an altered amount. Expected status: 409 and code `IDEMPOTENCY_KEY_REUSED`. Balances do not change."
+          }
+        },
+        {
+          "name": "Get Transfer by Reference",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Transfer returned to sender', () => pm.response.to.have.status(200));", "pm.test('Reference matches', () => pm.expect(pm.response.json().reference).to.eql(pm.collectionVariables.get('transferReference')));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/transfers/{{transferReference}}",
+            "description": "Returns an outgoing transfer by its public reference. Only the sender can retrieve it. Expected status: 200 with the same transfer representation returned by creation."
+          }
+        },
+        {
+          "name": "Get Sender Wallet After Transfer",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Sender wallet returned', () => pm.response.to.have.status(200));", "pm.test('Sender has NGN 60', () => pm.expect(pm.response.json().balanceMinor).to.eql('6000'));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/wallets/me",
+            "description": "Confirms the sender was credited once and debited once. Expected `balanceMinor`: `6000` (NGN 60)."
+          }
+        },
+        {
+          "name": "Get Recipient Wallet After Transfer",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient wallet returned', () => pm.response.to.have.status(200));", "pm.test('Recipient has NGN 40', () => pm.expect(pm.response.json().balanceMinor).to.eql('4000'));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{recipientToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/wallets/me",
+            "description": "Confirms the recipient was credited exactly once. Expected `balanceMinor`: `4000` (NGN 40)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Administration",
+      "description": "Requires `adminEmail` and `adminPassword` to be set in collection variables. Demonstrates administrator login, inspection, block enforcement, and restoration.",
+      "item": [
+        {
+          "name": "Login Administrator",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Administrator authenticated', () => pm.response.to.have.status(200));", "if (pm.response.code === 200) pm.collectionVariables.set('adminToken', pm.response.json().accessToken);"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Obtains the administrator JWT used by the remaining Administration requests. Set `adminEmail` and `adminPassword` locally in collection variables first. No real credentials are committed. Expected status: 200."
+          }
+        },
+        {
+          "name": "Inspect Recipient Account",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Administrator can inspect user', () => pm.response.to.have.status(200));", "pm.test('Recipient is active', () => pm.expect(pm.response.json().status).to.eql('ACTIVE'));"] } }],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }],
+            "url": "{{baseUrl}}/admin/users/{{recipientUserId}}",
+            "description": "Returns account status and block audit metadata to an administrator. Expected status: 200. A customer token receives 403."
+          }
+        },
+        {
+          "name": "Block Recipient Account",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient is blocked', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.test('Block metadata is recorded', () => { pm.expect(body.status).to.eql('BLOCKED'); pm.expect(body.blockedReason).to.eql('Postman risk review'); pm.expect(body.blockedAt).to.be.a('string'); });"] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Postman risk review\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/admin/users/{{recipientUserId}}/status",
+            "description": "Blocks the recipient while locking the same user row used by transfers. A reason is mandatory. Expected 200 response includes `status: BLOCKED`, `blockedAt`, `blockedReason`, and `blockedById`. Existing recipient JWTs are rejected on subsequent protected requests."
+          }
+        },
+        {
+          "name": "Reject Transfer to Blocked Recipient",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Blocked transfer is rejected', () => pm.response.to.have.status(422));", "pm.test('Failure identifies blocked account', () => pm.expect(pm.response.json().code).to.eql('ACCOUNT_BLOCKED'));"] } }],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{blockedTransferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"1.00\",\n  \"description\": \"Must not move\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/transfers",
+            "description": "Attempts a fresh transfer after the recipient is blocked. Expected 422 response contains code `ACCOUNT_BLOCKED` and a transfer reference. Neither balance changes."
+          }
+        },
+        {
+          "name": "Unblock Recipient Account",
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient is active again', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.test('Block metadata is cleared', () => { pm.expect(body.status).to.eql('ACTIVE'); pm.expect(body.blockedAt).to.eql(null); pm.expect(body.blockedReason).to.eql(null); });"] } }],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"ACTIVE\"\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{baseUrl}}/admin/users/{{recipientUserId}}/status",
+            "description": "Restores the recipient to active status and clears the block metadata. Expected status: 200 with `status: ACTIVE`."
+          }
+        }
+      ]
+    }
+  ]
+}
