@@ -4,7 +4,7 @@ A focused wallet API for the Lendsqr engineering exercise. It creates a wallet w
 
 Repository: [github.com/Akasam79/lendsqr-wallet-service](https://github.com/Akasam79/lendsqr-wallet-service)
 
-Live API: _add the Render URL after the first deployment_
+Live API: https://lendsqr-wallet-service-vk80.onrender.com
 
 Interactive API documentation is available at `/docs` when the service is running.
 
