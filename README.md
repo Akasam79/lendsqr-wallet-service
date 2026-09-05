@@ -52,7 +52,7 @@ Amounts enter the API as decimal strings to avoid JavaScript floating-point erro
 
 Registration depends on a `BlacklistProvider` interface. The production adapter calls Adjutor's `GET /v2/verification/karma/:identity` endpoint with bearer authentication and a bounded timeout. A successful Karma match blocks registration; a missing identity may proceed. Integration errors fail closed with `503` so an unchecked user is never onboarded.
 
-The deterministic test provider remains available through `BLACKLIST_PROVIDER=test`. It reads `BLACKLIST_TEST_IDENTITIES`, keeping automated tests independent of network availability and paid API calls.
+The deterministic test provider remains available through `BLACKLIST_PROVIDER=test`. It reads `BLACKLIST_TEST_IDENTITIES`, keeping automated tests and review deployments independent of network availability, paid API calls, and account approval. The checked-in Render Blueprint uses this provider because a newly created Adjutor organization requires KYC before it can access the APIs. The real adapter is implemented and can be enabled without a code change after an API key is issued.
 
 ### Account controls
 
@@ -252,13 +252,15 @@ The checked-in [render.yaml](./render.yaml) defines a free web service and Postg
 
 1. Push the repository to GitHub.
 2. In Render, choose **New > Blueprint** and connect this repository.
-3. Enter `ADJUTOR_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_PHONE` when prompted. Use a unique strong password.
+3. Enter `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_PHONE` when prompted. Use a unique strong password.
 4. Apply the Blueprint and wait for `/api/v1/health/ready` to return `200`.
 5. Add the generated service URL near the top of this README.
 
 Each service start applies pending migrations, idempotently seeds the administrator, and then starts the compiled API. Render's free PostgreSQL offering is suitable for this review deployment but has retention and availability limits; a production service should use a persistent paid database and a separately controlled release migration step.
 
-For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection, enables the real Adjutor provider and generates the JWT secret.
+For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection, generates the JWT secret and configures the deterministic blacklist provider with `blocked@example.com` and `+2348000000000` as review fixtures.
+
+To switch the deployed service to Karma after Adjutor approves the organization, create an Adjutor app with the Karma lookup scope, add its bearer token to Render as `ADJUTOR_API_KEY`, and change `BLACKLIST_PROVIDER` to `adjutor`. The service validates this configuration at startup and fails closed if the credential is missing or if the lookup cannot be completed.
 
 ## Production evolution
 

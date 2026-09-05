@@ -26,11 +26,11 @@ services:
       - key: RATE_LIMIT_MAX_REQUESTS
         value: "100"
       - key: BLACKLIST_PROVIDER
-        value: adjutor
+        value: test
+      - key: BLACKLIST_TEST_IDENTITIES
+        value: blocked@example.com,+2348000000000
       - key: ADJUTOR_BASE_URL
         value: https://adjutor.lendsqr.com
-      - key: ADJUTOR_API_KEY
-        sync: false
       - key: ADJUTOR_TIMEOUT_MS
         value: "5000"
       - key: ADMIN_EMAIL
