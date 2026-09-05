@@ -26,9 +26,13 @@ services:
       - key: RATE_LIMIT_MAX_REQUESTS
         value: "100"
       - key: BLACKLIST_PROVIDER
-        value: test
-      - key: BLACKLIST_TEST_IDENTITIES
-        value: blocked@example.com,+2348000000000
+        value: adjutor
+      - key: ADJUTOR_BASE_URL
+        value: https://adjutor.lendsqr.com
+      - key: ADJUTOR_API_KEY
+        sync: false
+      - key: ADJUTOR_TIMEOUT_MS
+        value: "5000"
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
@@ -40,7 +44,7 @@ services:
       - key: ADMIN_LAST_NAME
         value: Administrator
       - key: ADMIN_INITIAL_BALANCE_MINOR
-        value: "10000000"
+        value: "0"
 
 databases:
   - name: lendsqr-wallet-db

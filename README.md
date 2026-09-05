@@ -1,6 +1,6 @@
 # Lendsqr Wallet Service
 
-A focused wallet API for the Lendsqr engineering exercise. It creates a wallet when a user registers, screens identities before onboarding, lets administrators block or unblock accounts, and transfers NGN between wallets without losing balance accuracy under concurrent requests.
+A focused wallet API for the Lendsqr engineering exercise. It creates a wallet when a user registers, screens identities through Adjutor Karma, funds wallets, lets administrators block or unblock accounts, and transfers NGN without losing balance accuracy under concurrent requests.
 
 Repository: [github.com/Akasam79/lendsqr-wallet-service](https://github.com/Akasam79/lendsqr-wallet-service)
 
@@ -13,6 +13,7 @@ Interactive API documentation is available at `/docs` when the service is runnin
 - Atomic user and wallet creation after blacklist screening
 - JWT authentication with Argon2 password hashing
 - Role-protected account inspection, blocking and unblocking
+- Authenticated, audited and idempotent wallet funding
 - Atomic wallet-to-wallet transfers with PostgreSQL row locks
 - Mandatory idempotency keys and request fingerprinting
 - Integer minor-unit money storage (`10050` means `NGN 100.50`)
@@ -23,9 +24,9 @@ Interactive API documentation is available at `/docs` when the service is runnin
 
 ## Deliberate scope
 
-This submission keeps the product surface small so that the important financial behavior is easy to inspect. Each user owns one NGN wallet. There is no public funding endpoint, withdrawal flow, transaction pagination, refresh-token system or multi-currency conversion.
+This submission keeps the product surface small so that the important financial behavior is easy to inspect. Each user owns one NGN wallet. There is no withdrawal flow, transaction pagination, refresh-token system or multi-currency conversion.
 
-The seeded administrator receives a configurable demonstration balance only when its wallet is first created. This makes the transfer flow testable without presenting an unauthenticated money-creation API.
+The funding endpoint credits only the authenticated user's wallet. Because no payment processor was specified, it represents confirmation that an external deposit has succeeded; production payment rails would call the same service from a signed provider webhook rather than expose direct self-funding to a customer.
 
 ## Design decisions
 
@@ -37,7 +38,7 @@ The database also enforces non-negative wallet balances, positive transfer amoun
 
 ### Idempotency and replay protection
 
-Every `POST /transfers` request requires an `Idempotency-Key` header. The first request persists the key and a SHA-256 fingerprint of the transfer details in the same transaction as the balance change.
+Every funding and transfer request requires an `Idempotency-Key` header. The first request persists the key and a SHA-256 fingerprint of the request details in the same transaction as the balance change.
 
 - Retrying the same request returns the original transfer and never debits twice.
 - Reusing the key with different transfer details returns `409 Conflict`.
@@ -49,9 +50,9 @@ Amounts enter the API as decimal strings to avoid JavaScript floating-point erro
 
 ### Blacklist integration boundary
 
-Registration depends on a `BlacklistProvider` interface rather than an Adjutor-specific implementation. The included deterministic provider reads `BLACKLIST_TEST_IDENTITIES`, making local development and automated tests reliable.
+Registration depends on a `BlacklistProvider` interface. The production adapter calls Adjutor's `GET /v2/verification/karma/:identity` endpoint with bearer authentication and a bounded timeout. A successful Karma match blocks registration; a missing identity may proceed. Integration errors fail closed with `503` so an unchecked user is never onboarded.
 
-The exact Adjutor/Karma request and response contract was not confirmed for this exercise. Selecting `BLACKLIST_PROVIDER=adjutor` intentionally fails at startup instead of silently allowing registrations. A production adapter can be added behind the existing interface once the contract and credentials are supplied, without changing registration logic.
+The deterministic test provider remains available through `BLACKLIST_PROVIDER=test`. It reads `BLACKLIST_TEST_IDENTITIES`, keeping automated tests independent of network availability and paid API calls.
 
 ### Account controls
 
@@ -63,13 +64,13 @@ Only administrators can block or unblock a user. Blocking requires a reason and 
 src/
 ├── admin/          # role-protected user status management
 ├── auth/           # registration, login, JWT guards and decorators
-├── blacklist/      # provider boundary and deterministic test provider
+├── blacklist/      # Adjutor Karma adapter and deterministic test provider
 ├── config/         # validated environment and database configuration
 ├── database/       # TypeORM data source and versioned migrations
 ├── health/         # liveness and database readiness checks
 ├── transfers/      # money parsing and concurrency-safe transfer workflow
 ├── users/          # user entity and current-user endpoint
-├── wallets/        # wallet entity and balance endpoint
+├── wallets/        # wallet balance, funding records and funding workflow
 ├── app.module.ts
 └── main.ts
 scripts/            # idempotent administrator seed
@@ -131,7 +132,7 @@ pnpm start:dev
 
 The API starts at `http://localhost:3000/api/v1`; Swagger UI is at `http://localhost:3000/docs`.
 
-The seed can be run repeatedly. It creates or promotes the configured administrator and only grants `ADMIN_INITIAL_BALANCE_MINOR` when creating that administrator's wallet for the first time.
+The seed can be run repeatedly. It creates or promotes the configured administrator and only applies `ADMIN_INITIAL_BALANCE_MINOR` when creating that administrator's wallet for the first time. It defaults to zero because the working funding endpoint is now available.
 
 ## Environment variables
 
@@ -145,10 +146,13 @@ The seed can be run repeatedly. It creates or promotes the configured administra
 | `CORS_ORIGINS` | `*` or comma-separated allowed origins | `*` |
 | `RATE_LIMIT_TTL_MS` | Rate-limit window | `60000` |
 | `RATE_LIMIT_MAX_REQUESTS` | Requests per client in the window | `100` |
-| `BLACKLIST_PROVIDER` | `test` now; `adjutor` is reserved | `test` |
+| `BLACKLIST_PROVIDER` | `test` or the real `adjutor` adapter | `test` locally |
 | `BLACKLIST_TEST_IDENTITIES` | Comma-separated rejected emails or phones | sample values supplied |
+| `ADJUTOR_BASE_URL` | Adjutor API origin | `https://adjutor.lendsqr.com` |
+| `ADJUTOR_API_KEY` | Adjutor app bearer token | required with `adjutor` |
+| `ADJUTOR_TIMEOUT_MS` | Karma lookup timeout | `5000` |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_PHONE` | Seed administrator identity | required for seeding |
-| `ADMIN_INITIAL_BALANCE_MINOR` | First-time demo balance in kobo | `10000000` (NGN 100,000) |
+| `ADMIN_INITIAL_BALANCE_MINOR` | Optional first-time opening balance in kobo | `0` |
 
 See [.env.example](./.env.example) for the complete template. Secrets are ignored by Git.
 
@@ -162,6 +166,7 @@ All paths below are prefixed with `/api/v1`. Except for registration, login and 
 | `POST` | `/auth/login` | Public | Return a short-lived JWT |
 | `GET` | `/users/me` | Authenticated | Return the current user |
 | `GET` | `/wallets/me` | Authenticated | Return the current wallet and balance |
+| `POST` | `/wallets/me/fund` | Authenticated | Fund own wallet; requires `Idempotency-Key` |
 | `POST` | `/transfers` | Authenticated | Transfer funds; requires `Idempotency-Key` |
 | `GET` | `/transfers/:reference` | Sender | Return one outgoing transfer |
 | `GET` | `/admin/users/:id` | Administrator | Inspect an account |
@@ -193,6 +198,16 @@ curl -X POST http://localhost:3000/api/v1/auth/login \
   -d '{"email":"admin@example.com","password":"your-admin-password"}'
 ```
 
+Fund the authenticated wallet with NGN 5,000:
+
+```bash
+curl -X POST http://localhost:3000/api/v1/wallets/me/fund \
+  -H 'Authorization: Bearer <access-token>' \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: demo-funding-20260905-001' \
+  -d '{"amount":"5000.00","description":"Demo funding"}'
+```
+
 Use the returned token and the recipient wallet ID to transfer NGN 1,250.50:
 
 ```bash
@@ -222,6 +237,8 @@ End-to-end tests run against `lendsqr_wallet_test` and truncate its application 
 
 The concurrency suite proves that:
 
+- Simultaneous funding retries create one funding record and one credit.
+- Distinct parallel funding requests all contribute exactly once to the balance.
 - Twenty simultaneous NGN 10 transfers from a NGN 100 wallet result in exactly ten successes and a zero sender balance.
 - Twenty simultaneous submissions with one idempotency key create one transfer and one debit.
 - A key cannot be reused for altered transfer details.
@@ -235,17 +252,17 @@ The checked-in [render.yaml](./render.yaml) defines a free web service and Postg
 
 1. Push the repository to GitHub.
 2. In Render, choose **New > Blueprint** and connect this repository.
-3. Enter `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_PHONE` when prompted. Use a unique strong password.
+3. Enter `ADJUTOR_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_PHONE` when prompted. Use a unique strong password.
 4. Apply the Blueprint and wait for `/api/v1/health/ready` to return `200`.
 5. Add the generated service URL near the top of this README.
 
 Each service start applies pending migrations, idempotently seeds the administrator, and then starts the compiled API. Render's free PostgreSQL offering is suitable for this review deployment but has retention and availability limits; a production service should use a persistent paid database and a separately controlled release migration step.
 
-For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection and generates the JWT secret.
+For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection, enables the real Adjutor provider and generates the JWT secret.
 
 ## Production evolution
 
-The next changes would be driven by actual product requirements: implement the confirmed Adjutor/Karma adapter with timeout/retry/circuit-breaker behavior; add a double-entry immutable ledger and reconciliation jobs; move rate limiting to a shared Redis store for multiple instances; add refresh-token rotation and key rotation; and emit structured audit/observability events. Those are intentionally outside this exercise rather than partially implemented abstractions.
+The next changes would be driven by actual product requirements: connect funding to signed payment-provider webhooks; add a double-entry immutable ledger and reconciliation jobs; add retry/circuit-breaker policy informed by Adjutor's billing and availability contract; move rate limiting to a shared Redis store for multiple instances; add refresh-token rotation and key rotation; and emit structured audit/observability events. Those are intentionally outside this exercise rather than partially implemented abstractions.
 
 ## License
 
