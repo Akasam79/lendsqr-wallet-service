@@ -1,4 +1,4 @@
-import { hash } from '@node-rs/argon2';
+import { hash, verify } from '@node-rs/argon2';
 import { User } from '../users/user.entity';
 import { UserRole, UserStatus } from '../users/user.enums';
 import { Wallet } from '../wallets/wallet.entity';
@@ -49,17 +49,34 @@ export async function runAdminSeed(): Promise<void> {
         });
         await users.save(admin);
       } else {
-        admin.firstName = firstName;
-        admin.lastName = lastName;
-        admin.phone = phone;
-        admin.passwordHash = passwordHash;
-        admin.role = UserRole.ADMIN;
-        admin.status = UserStatus.ACTIVE;
-        admin.blockedAt = null;
-        admin.blockedReason = null;
-        admin.blockedById = null;
-        await users.save(admin);
+        // Use an explicit update because passwordHash is hidden from normal selects.
+        // This makes credential rotation unambiguous when the seed runs on deploy.
+        await users.update(admin.id, {
+          firstName,
+          lastName,
+          phone,
+          passwordHash,
+          role: UserRole.ADMIN,
+          status: UserStatus.ACTIVE,
+          blockedAt: null,
+          blockedReason: null,
+          blockedById: null,
+        });
       }
+
+      const persistedAdmin = await users
+        .createQueryBuilder('user')
+        .addSelect('user.passwordHash')
+        .where('user.email = :email', { email })
+        .getOne();
+      const passwordWasPersisted = persistedAdmin
+        ? await verify(persistedAdmin.passwordHash, password)
+        : false;
+      if (!persistedAdmin || !passwordWasPersisted) {
+        throw new Error('Administrator credentials were not persisted');
+      }
+
+      admin = persistedAdmin;
 
       const wallets = manager.getRepository(Wallet);
       const existingWallet = await wallets.findOneBy({ userId: admin.id });
