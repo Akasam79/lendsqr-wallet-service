@@ -1,7 +1,7 @@
 {
   "name": "lendsqr-wallet-service",
   "version": "0.0.1",
-  "description": "A concurrency-safe wallet service built for the Lendsqr engineering exercise",
+  "description": "A concurrency-safe wallet service built with NestJS and PostgreSQL",
   "author": "Samuel Akabuike",
   "private": true,
   "engines": {

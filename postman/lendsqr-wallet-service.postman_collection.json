@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "d6903ead-9dfc-4fe0-9c25-d29fd3dd22af",
     "name": "Lendsqr Wallet Service",
-    "description": "A review-ready collection for the Lendsqr wallet service. It covers health checks, blacklist-aware account creation, JWT authentication, wallet funding, wallet-to-wallet transfers, replay protection, and administrator block/unblock controls.\n\nRun the requests from top to bottom. Register Sender initializes unique test identities and idempotency keys. Successful requests save JWTs, user IDs, wallet IDs, and transaction references as collection variables.\n\nBefore running the Administration folder, set adminEmail and adminPassword in the collection variables to the administrator credentials configured in Render. They are deliberately not committed.\n\nAmounts are decimal strings in naira at the API boundary and integer kobo internally. The deployed review environment treats blocked@example.com and +2348000000000 as blacklisted fixtures while the Adjutor account awaits KYC approval.",
+    "description": "An executable collection for the Lendsqr wallet service. It covers health checks, blacklist-aware account creation, JWT authentication, wallet funding, wallet-to-wallet transfers, replay protection, and administrator block/unblock controls.\n\nRun the requests from top to bottom. Register Sender initializes unique test identities and idempotency keys. Successful requests save JWTs, user IDs, wallet IDs, and transaction references as collection variables.\n\nBefore running the Administration folder, set adminEmail and adminPassword in the collection variables to the administrator credentials configured in Render. They are deliberately not committed.\n\nAmounts are decimal strings in naira at the API boundary and integer kobo internally. The hosted environment uses blocked@example.com and +2348000000000 as deterministic blacklist fixtures. Set BLACKLIST_PROVIDER=adjutor and provide an API key to use the Adjutor Karma adapter.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -67,7 +67,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Samuel\",\n  \"lastName\": \"Sender\",\n  \"email\": \"{{senderEmail}}\",\n  \"phone\": \"{{senderPhone}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Chidi\",\n  \"lastName\": \"Sender\",\n  \"email\": \"{{senderEmail}}\",\n  \"phone\": \"{{senderPhone}}\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/auth/register",
             "description": "Screens the email and phone through the configured blacklist provider, then atomically creates one user and one NGN wallet. Expected 201 response contains `user` and `wallet`; the initial `balanceMinor` is `0`. This request generates fresh collection variables before it runs."
           }
@@ -91,7 +91,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Blocked\",\n  \"lastName\": \"Fixture\",\n  \"email\": \"blocked@example.com\",\n  \"phone\": \"+2348099999999\",\n  \"password\": \"{{testPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/auth/register",
-            "description": "Demonstrates blacklist enforcement. The review deployment deliberately marks `blocked@example.com` as blacklisted. Expected 403 response: `{ \"message\": \"Registration is not permitted for this identity\", \"error\": \"Forbidden\", \"statusCode\": 403 }`. No user or wallet is created."
+            "description": "Demonstrates blacklist enforcement. The hosted configuration marks `blocked@example.com` as a deterministic blacklist fixture. Expected 403 response: `{ \"message\": \"Registration is not permitted for this identity\", \"error\": \"Forbidden\", \"statusCode\": 403 }`. No user or wallet is created."
           }
         },
         {
@@ -154,9 +154,9 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Wallet funding example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/wallets/me/fund",
-            "description": "Credits NGN 100 using a mandatory idempotency key. Expected 201 response contains an `FND_...` reference, `amount: 100.00`, `amountMinor: 10000`, currency, description, and creation time. This direct funding endpoint is intentionally a demo boundary; production funding would normally consume a verified payment-provider webhook."
+            "description": "Credits NGN 100 using a mandatory idempotency key. Expected 201 response contains an `FND_...` reference, `amount: 100.00`, `amountMinor: 10000`, currency, description, and creation time. This endpoint represents confirmed external funding; a payment integration would normally invoke the underlying operation after verifying a signed provider webhook."
           }
         },
         {
@@ -165,7 +165,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"100.00\",\n  \"description\": \"Wallet funding example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/wallets/me/fund",
             "description": "Sends the exact same request and key. Expected status: 201 with the original funding reference. The balance remains NGN 100 rather than NGN 200."
           }
@@ -176,7 +176,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{fundingKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"101.00\",\n  \"description\": \"Postman review funding\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"amount\": \"101.00\",\n  \"description\": \"Wallet funding example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/wallets/me/fund",
             "description": "Reuses the funding key with a different amount. Expected 409 response: `{ \"code\": \"IDEMPOTENCY_KEY_REUSED\", \"message\": \"This idempotency key was used for a different request\" }`. No money moves."
           }
@@ -193,7 +193,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Wallet transfer example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/transfers",
             "description": "Transfers NGN 40 from the authenticated sender to the saved recipient wallet. Expected 201 response contains a `TRF_...` reference, both wallet IDs, `amountMinor: 4000`, currency, `status: SUCCEEDED`, description, and timestamps. Both user and wallet rows are locked in deterministic order inside one PostgreSQL transaction."
           }
@@ -204,7 +204,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"40.00\",\n  \"description\": \"Wallet transfer example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/transfers",
             "description": "Retries the exact transfer. Expected status: 201 with the original reference. The sender remains at NGN 60 and the recipient at NGN 40."
           }
@@ -215,7 +215,7 @@
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}", "type": "text" }, { "key": "Idempotency-Key", "value": "{{transferKey}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"41.00\",\n  \"description\": \"Postman review transfer\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"recipientWalletId\": \"{{recipientWalletId}}\",\n  \"amount\": \"41.00\",\n  \"description\": \"Wallet transfer example\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/transfers",
             "description": "Reuses the transfer key with an altered amount. Expected status: 409 and code `IDEMPOTENCY_KEY_REUSED`. Balances do not change."
           }
@@ -279,11 +279,11 @@
         },
         {
           "name": "Block Recipient Account",
-          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient is blocked', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.test('Block metadata is recorded', () => { pm.expect(body.status).to.eql('BLOCKED'); pm.expect(body.blockedReason).to.eql('Postman risk review'); pm.expect(body.blockedAt).to.be.a('string'); });"] } }],
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('Recipient is blocked', () => pm.response.to.have.status(200));", "const body = pm.response.json();", "pm.test('Block metadata is recorded', () => { pm.expect(body.status).to.eql('BLOCKED'); pm.expect(body.blockedReason).to.eql('Manual risk assessment'); pm.expect(body.blockedAt).to.be.a('string'); });"] } }],
           "request": {
             "method": "PATCH",
             "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}", "type": "text" }, { "key": "Content-Type", "value": "application/json" }],
-            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Postman risk review\"\n}", "options": { "raw": { "language": "json" } } },
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"BLOCKED\",\n  \"reason\": \"Manual risk assessment\"\n}", "options": { "raw": { "language": "json" } } },
             "url": "{{baseUrl}}/admin/users/{{recipientUserId}}/status",
             "description": "Blocks the recipient while locking the same user row used by transfers. A reason is mandatory. Expected 200 response includes `status: BLOCKED`, `blockedAt`, `blockedReason`, and `blockedById`. Existing recipient JWTs are rejected on subsequent protected requests."
           }

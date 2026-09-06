@@ -1,6 +1,6 @@
 # Lendsqr Wallet Service
 
-A focused wallet API for the Lendsqr engineering exercise. It creates a wallet when a user registers, screens identities through Adjutor Karma, funds wallets, lets administrators block or unblock accounts, and transfers NGN without losing balance accuracy under concurrent requests.
+A focused wallet API that creates a wallet during registration, screens identities through a pluggable blacklist provider, funds wallets, lets administrators block or unblock accounts, and transfers NGN without losing balance accuracy under concurrent requests. An Adjutor Karma adapter is included for external blacklist checks.
 
 Repository: [github.com/Akasam79/lendsqr-wallet-service](https://github.com/Akasam79/lendsqr-wallet-service)
 
@@ -24,9 +24,9 @@ Interactive API documentation is available at `/docs` when the service is runnin
 
 ## Deliberate scope
 
-This submission keeps the product surface small so that the important financial behavior is easy to inspect. Each user owns one NGN wallet. There is no withdrawal flow, transaction pagination, refresh-token system or multi-currency conversion.
+The product surface is deliberately small so that its financial behavior remains explicit. Each user owns one NGN wallet. There is no withdrawal flow, transaction pagination, refresh-token system or multi-currency conversion.
 
-The funding endpoint credits only the authenticated user's wallet. Because no payment processor was specified, it represents confirmation that an external deposit has succeeded; production payment rails would call the same service from a signed provider webhook rather than expose direct self-funding to a customer.
+The funding endpoint credits only the authenticated user's wallet and models confirmation that an external deposit has succeeded. Production payment rails would invoke the underlying operation from a signed provider webhook rather than expose direct self-funding to a customer.
 
 ## Design decisions
 
@@ -52,7 +52,7 @@ Amounts enter the API as decimal strings to avoid JavaScript floating-point erro
 
 Registration depends on a `BlacklistProvider` interface. The production adapter calls Adjutor's `GET /v2/verification/karma/:identity` endpoint with bearer authentication and a bounded timeout. A successful Karma match blocks registration; a missing identity may proceed. Integration errors fail closed with `503` so an unchecked user is never onboarded.
 
-The deterministic test provider remains available through `BLACKLIST_PROVIDER=test`. It reads `BLACKLIST_TEST_IDENTITIES`, keeping automated tests and review deployments independent of network availability, paid API calls, and account approval. The checked-in Render Blueprint uses this provider because a newly created Adjutor organization requires KYC before it can access the APIs. The real adapter is implemented and can be enabled without a code change after an API key is issued.
+The deterministic provider is enabled with `BLACKLIST_PROVIDER=test` and reads `BLACKLIST_TEST_IDENTITIES`. It makes local development, automated tests and hosted demonstrations reproducible without external network calls or paid API access. The Render Blueprint uses this provider by default. The Adjutor adapter can be enabled without a code change when an API key is available.
 
 ### Account controls
 
@@ -174,14 +174,14 @@ All paths below are prefixed with `/api/v1`. Except for registration, login and 
 | `GET` | `/health/live` | Public | Confirm the process is running |
 | `GET` | `/health/ready` | Public | Confirm PostgreSQL is reachable |
 
-### Test every endpoint with Postman
+### Postman collection
 
 Import [`postman/lendsqr-wallet-service.postman_collection.json`](./postman/lendsqr-wallet-service.postman_collection.json) into Postman. The collection uses the deployed API by default; change its `baseUrl` variable to `http://localhost:3000/api/v1` to test a local instance.
 
 1. Open the collection's **Variables** tab and set `adminEmail` and `adminPassword` to the administrator values configured in Render. Keep these as local values and never commit them.
 2. Run the requests from folders 1 through 6 in order, or use **Run collection**. Start with **Register Sender** for each new run; its pre-request script generates unique emails, phone numbers and idempotency keys.
 3. Registration and login scripts capture the user IDs, wallet IDs and JWTs automatically. Funding and transfer scripts capture their references for later requests.
-4. Review the **Test Results** panel. Each request explains its purpose and expected response, and includes assertions for the expected status and important response fields.
+4. Open the **Test Results** panel. Each request explains its purpose and expected response, and includes assertions for the expected status and important response fields.
 
 The sequence checks both happy paths and security-sensitive behavior: blacklist rejection, missing authentication, idempotent funding and transfer replays, rejection of altered replays, balance accuracy, administrator authorization, and block/unblock enforcement. Render's free service may take roughly 50 seconds to wake after inactivity, so allow the first health request to finish before running the collection.
 
@@ -259,13 +259,13 @@ The concurrency suite proves that:
 
 GitHub Actions runs linting, unit tests, compilation and database-backed tests on pushes and pull requests.
 
-### Database state before submission
+### Database isolation and reset
 
-Do **not** clear the hosted Render database before submitting. The synthetic smoke-test records contain no real customer data, demonstrate that the deployed write paths work, and do not affect another test run because the Postman collection generates unique identities and keys. Keeping the database also preserves the seeded administrator required to demonstrate account controls.
+The Postman collection generates unique identities and idempotency keys, so it can be run repeatedly without resetting the database. Its generated records contain only synthetic data. The hosted database is intentionally persistent and retains the seeded administrator used for account controls.
 
 The end-to-end suite uses the separate `lendsqr_wallet_test` database and deletes its own application rows before each test. It must never be pointed at the development or Render database.
 
-If a completely fresh **local development** database is ever needed, stop the API, drop and recreate only `lendsqr_wallet` in pgAdmin, then run `pnpm migration:run` and `pnpm seed:admin`. Confirm the database name before dropping it. This reset is optional and should not be performed against the hosted submission database.
+To reset a local development environment, stop the API, drop and recreate only `lendsqr_wallet` in pgAdmin, then run `pnpm migration:run` and `pnpm seed:admin`. Confirm the database name before dropping it. The hosted database does not require this reset.
 
 ## Deploy to Render
 
@@ -277,16 +277,16 @@ The checked-in [render.yaml](./render.yaml) defines a free web service and Postg
 4. Apply the Blueprint and wait for `/api/v1/health/ready` to return `200`.
 5. Add the generated service URL near the top of this README.
 
-Each service start applies pending migrations, idempotently seeds the administrator, and then starts the compiled API. Render's free PostgreSQL offering is suitable for this review deployment but has retention and availability limits; a production service should use a persistent paid database and a separately controlled release migration step.
+Each service start applies pending migrations, idempotently seeds the administrator, and then starts the compiled API. Render's free PostgreSQL offering is sufficient for this hosted instance but has retention and availability limits; a production service should use a persistent paid database and a separately controlled release migration step.
 
-For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection, generates the JWT secret and configures the deterministic blacklist provider with `blocked@example.com` and `+2348000000000` as review fixtures.
+For a real frontend, replace `CORS_ORIGINS=*` with its exact origin. The Blueprint uses Render's private database connection, generates the JWT secret and configures the deterministic blacklist provider with `blocked@example.com` and `+2348000000000` as test fixtures.
 
-To switch the deployed service to Karma after Adjutor approves the organization, create an Adjutor app with the Karma lookup scope, add its bearer token to Render as `ADJUTOR_API_KEY`, and change `BLACKLIST_PROVIDER` to `adjutor`. The service validates this configuration at startup and fails closed if the credential is missing or if the lookup cannot be completed.
+To use Karma, create an Adjutor app with the Karma lookup scope, configure its bearer token as `ADJUTOR_API_KEY`, and change `BLACKLIST_PROVIDER` to `adjutor`. The service validates this configuration at startup and fails closed if the credential is missing or if the lookup cannot be completed.
 
-## Production evolution
+## Possible extensions
 
-The next changes would be driven by actual product requirements: connect funding to signed payment-provider webhooks; add a double-entry immutable ledger and reconciliation jobs; add retry/circuit-breaker policy informed by Adjutor's billing and availability contract; move rate limiting to a shared Redis store for multiple instances; add refresh-token rotation and key rotation; and emit structured audit/observability events. Those are intentionally outside this exercise rather than partially implemented abstractions.
+Further changes should be driven by product requirements: connect funding to signed payment-provider webhooks; add a double-entry immutable ledger and reconciliation jobs; add retry/circuit-breaker policy informed by Adjutor's billing and availability contract; move rate limiting to a shared Redis store for multiple instances; add refresh-token rotation and key rotation; and emit structured audit/observability events. These capabilities are not represented by partial abstractions in the current codebase.
 
 ## License
 
-This repository was created for a take-home engineering assessment and is not licensed for redistribution.
+No license is granted for redistribution.
