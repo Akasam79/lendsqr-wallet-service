@@ -34,6 +34,7 @@ export async function runAdminSeed(): Promise<void> {
         .addSelect('user.passwordHash')
         .where('user.email = :email', { email })
         .getOne();
+      const passwordHash = await hash(password);
 
       if (!admin) {
         admin = users.create({
@@ -41,13 +42,17 @@ export async function runAdminSeed(): Promise<void> {
           lastName,
           email,
           phone,
-          passwordHash: await hash(password),
+          passwordHash,
           role: UserRole.ADMIN,
           status: UserStatus.ACTIVE,
           blacklistCheckedAt: new Date(),
         });
         await users.save(admin);
       } else {
+        admin.firstName = firstName;
+        admin.lastName = lastName;
+        admin.phone = phone;
+        admin.passwordHash = passwordHash;
         admin.role = UserRole.ADMIN;
         admin.status = UserStatus.ACTIVE;
         admin.blockedAt = null;

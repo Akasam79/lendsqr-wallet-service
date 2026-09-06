@@ -6,6 +6,7 @@ import { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/app.setup';
 import migrationDataSource from '../src/database/data-source';
+import { runAdminSeed } from '../src/database/seed-admin';
 import { TransferStatus } from '../src/transfers/transfer.enums';
 
 type RegisteredAccount = {
@@ -72,6 +73,51 @@ describe('Wallet service (e2e)', () => {
       'SELECT count(*)::int AS count FROM users',
     )) as [{ count: number }];
     expect(count).toBe(1);
+  });
+
+  it('synchronizes the configured administrator password', async () => {
+    const originalEmail = process.env.ADMIN_EMAIL;
+    const originalPassword = process.env.ADMIN_PASSWORD;
+    const originalPhone = process.env.ADMIN_PHONE;
+
+    try {
+      process.env.ADMIN_EMAIL = 'seed-admin@example.com';
+      process.env.ADMIN_PASSWORD = 'InitialAdminPass123';
+      process.env.ADMIN_PHONE = '+2348010000014';
+      await runAdminSeed();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'seed-admin@example.com',
+          password: 'InitialAdminPass123',
+        })
+        .expect(200);
+
+      process.env.ADMIN_PASSWORD = 'RotatedAdminPass456';
+      await runAdminSeed();
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'seed-admin@example.com',
+          password: 'InitialAdminPass123',
+        })
+        .expect(401);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({
+          email: 'seed-admin@example.com',
+          password: 'RotatedAdminPass456',
+        })
+        .expect(200);
+      expect(response.body.user.role).toBe('ADMIN');
+    } finally {
+      restoreEnvironment('ADMIN_EMAIL', originalEmail);
+      restoreEnvironment('ADMIN_PASSWORD', originalPassword);
+      restoreEnvironment('ADMIN_PHONE', originalPhone);
+    }
   });
 
   it('applies simultaneous funding retries only once', async () => {
@@ -313,6 +359,14 @@ describe('Wallet service (e2e)', () => {
       })
       .expect(201);
     return response.body as RegisteredAccount;
+  }
+
+  function restoreEnvironment(name: string, value: string | undefined) {
+    if (value === undefined) {
+      delete process.env[name];
+      return;
+    }
+    process.env[name] = value;
   }
 
   async function login(email: string): Promise<string> {

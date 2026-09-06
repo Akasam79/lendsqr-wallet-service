@@ -132,7 +132,7 @@ pnpm start:dev
 
 The API starts at `http://localhost:3000/api/v1`; Swagger UI is at `http://localhost:3000/docs`.
 
-The seed can be run repeatedly. It creates or promotes the configured administrator and only applies `ADMIN_INITIAL_BALANCE_MINOR` when creating that administrator's wallet for the first time. It defaults to zero because the working funding endpoint is now available.
+The seed can be run repeatedly. It creates or synchronizes the configured administrator, including its profile, password, role and active status. `ADMIN_INITIAL_BALANCE_MINOR` is applied only when the administrator's wallet is created for the first time and defaults to zero because the funding endpoint is available.
 
 ## Environment variables
 
